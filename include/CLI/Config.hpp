@@ -659,36 +659,36 @@ inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<t
                                                              std::vector<std::string> prefix) const {
     std::vector<CLI::ConfigItem> results;
 
-    if(j.is_object()) {
-        for(json::iterator item = j.begin(); item != j.end(); ++item) {
-            auto copy_prefix = prefix;
-            if(!name.empty())
-                copy_prefix.push_back(name);
-            auto sub_results = _from_config(*item, item.key(), copy_prefix);
-            results.insert(results.end(), sub_results.begin(), sub_results.end());
-        }
-    } else if(!name.empty()) {
-        results.emplace_back();
-        CLI::ConfigItem &res = results.back();
-        res.name = name;
-        res.parents = prefix;
-        if(j.is_boolean()) {
-            res.inputs = {j.get<bool>() ? "true" : "false"};
-        } else if(j.is_number()) {
-            std::stringstream ss;
-            ss << j.get<double>();
-            res.inputs = {ss.str()};
-        } else if(j.is_string()) {
-            res.inputs = {j.get<std::string>()};
-        } else if(j.is_array()) {
-            for(std::string ival : j)
-                res.inputs.push_back(ival);
-        } else {
-            throw CLI::ConversionError("Failed to convert " + name);
-        }
-    } else {
-        throw CLI::ConversionError("You must make all top level values objects in json!");
-    }
+    // if(j.is_object()) {
+    //     for(json::iterator item = j.begin(); item != j.end(); ++item) {
+    //         auto copy_prefix = prefix;
+    //         if(!name.empty())
+    //             copy_prefix.push_back(name);
+    //         auto sub_results = _from_config(*item, item.key(), copy_prefix);
+    //         results.insert(results.end(), sub_results.begin(), sub_results.end());
+    //     }
+    // } else if(!name.empty()) {
+    //     results.emplace_back();
+    //     CLI::ConfigItem &res = results.back();
+    //     res.name = name;
+    //     res.parents = prefix;
+    //     if(j.is_boolean()) {
+    //         res.inputs = {j.get<bool>() ? "true" : "false"};
+    //     } else if(j.is_number()) {
+    //         std::stringstream ss;
+    //         ss << j.get<double>();
+    //         res.inputs = {ss.str()};
+    //     } else if(j.is_string()) {
+    //         res.inputs = {j.get<std::string>()};
+    //     } else if(j.is_array()) {
+    //         for(std::string ival : j)
+    //             res.inputs.push_back(ival);
+    //     } else {
+    //         throw CLI::ConversionError("Failed to convert " + name);
+    //     }
+    // } else {
+    //     throw CLI::ConversionError("You must make all top level values objects in json!");
+    // }
 
     return results;
 }
