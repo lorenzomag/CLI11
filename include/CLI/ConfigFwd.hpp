@@ -17,6 +17,11 @@
 #include "Error.hpp"
 #include "StringTools.hpp"
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
+#include <toml11/toml.hpp>
+
 namespace CLI {
 // [CLI11:config_fwd_hpp:verbatim]
 
@@ -164,10 +169,19 @@ class ConfigBase : public Config {
 };
 
 /// the default Config is the TOML file format
-using ConfigTOML = ConfigBase;
+class ConfigTOML : public Config {
+  public:
+    std::string to_config(const App *app, bool default_also, bool write_description, std::string prefix) const override;
+    std::vector<ConfigItem> from_config(std::istream &input) const override;
+
+  private:
+    std::vector<ConfigItem> _from_config(toml::basic_value<toml::preserve_comments> j,
+                                         std::string name = "",
+                                         std::vector<std::string> prefix = {}) const;
+};
 
 /// ConfigINI generates a "standard" INI compliant output
-class ConfigINI : public ConfigTOML {
+class ConfigINI : public ConfigBase {
 
   public:
     ConfigINI() {
@@ -178,5 +192,13 @@ class ConfigINI : public ConfigTOML {
         valueDelimiter = '=';
     }
 };
+
+class ConfigJSON : public Config {
+  public:
+    std::string to_config(const App *app, bool default_also, bool, std::string) const override;
+    std::vector<ConfigItem> from_config(std::istream &input) const override;
+    std::vector<ConfigItem> _from_config(json j, std::string name = "", std::vector<std::string> prefix = {}) const;
+};
+
 // [CLI11:config_fwd_hpp:end]
 }  // namespace CLI

@@ -4,12 +4,15 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-#pragma once
+// #pragma once
 
 // [CLI11:public_includes:set]
 #include <algorithm>
+#include <cctype>
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -18,6 +21,8 @@
 #include "App.hpp"
 #include "ConfigFwd.hpp"
 #include "StringTools.hpp"
+
+using namespace std::string_literals;
 
 namespace CLI {
 // [CLI11:config_hpp:verbatim]
@@ -167,6 +172,55 @@ checkParentSegments(std::vector<ConfigItem> &output, const std::string &currentS
     output.back().parents = std::move(parents);
     output.back().name = "++";
 }
+
+/// Add a single result to the result set, taking into account delimiters
+inline int _split_result_str(std::string &&result, char delimiter_, std::vector<std::string> &res) {
+    int result_count = 0;
+    if(!result.empty() && result.front() == '[' &&
+       result.back() == ']') {  // this is now a vector string likely from the default or user entry
+        result.pop_back();
+
+        for(auto &var : CLI::detail::split(result.substr(1), ',')) {
+            if(!var.empty()) {
+                result_count += _split_result_str(std::move(var), delimiter_, res);
+            }
+        }
+        return result_count;
+    }
+    if(delimiter_ == '\0') {
+        res.push_back(std::move(result));
+        ++result_count;
+    } else {
+        if((result.find_first_of(delimiter_) != std::string::npos)) {
+            for(const auto &var : CLI::detail::split(result, delimiter_)) {
+                if(!var.empty()) {
+                    res.push_back(var);
+                    ++result_count;
+                }
+            }
+        } else {
+            res.push_back(std::move(result));
+            ++result_count;
+        }
+    }
+    return result_count;
+}
+template <typename T> std::vector<std::string> get_description_for_TOML(T *CLI_obj) {
+    // Get description of CLI::App/CLI::Option
+    // Place each line of the string in a string vector element, separating lines by '\n'
+    // Return rvalue of string vector
+    std::istringstream desc_stream(CLI_obj->get_description());
+    std::vector<std::string> lines;
+    std::string _line;
+    while(getline(desc_stream, _line)) {
+        // Add a trailing space for readability if whitespace is not present at beginning of line
+        if(!isspace(_line.at(0)))
+            _line.insert(0, 1, ' ');
+        lines.push_back(_line);
+    }
+    return std::move(lines);
+}
+
 }  // namespace detail
 
 inline std::vector<ConfigItem> ConfigBase::from_config(std::istream &input) const {
@@ -392,5 +446,253 @@ ConfigBase::to_config(const App *app, bool default_also, bool write_description,
     return out.str();
 }
 
-// [CLI11:config_hpp:end]
+// ---------------- JSON Config file ----------- BEGIN //
+using nlohmann::json;
+inline std::string ConfigJSON::to_config(const CLI::App *app, bool default_also, bool, std::string) const {
+
+    json j;
+
+    for(const CLI::Option *opt : app->get_options({})) {
+
+        // Only process option with a long-name and configurable
+        if(!opt->get_lnames().empty() && opt->get_configurable()) {
+            std::string name = opt->get_lnames()[0];
+
+            // Non-flags
+            if(opt->get_type_size() != 0) {
+
+                // If the option was found on command line
+                if(opt->count() == 1)
+                    j[name] = opt->results().at(0);
+                else if(opt->count() > 1)
+                    j[name] = opt->results();
+
+                // If the option has a default and is requested by optional argument
+                else if(default_also && !opt->get_default_str().empty())
+                    j[name] = opt->get_default_str();
+
+                // Flag, one passed
+            } else if(opt->count() == 1) {
+                j[name] = true;
+
+                // Flag, multiple passed
+            } else if(opt->count() > 1) {
+                j[name] = opt->count();
+
+                // Flag, not present
+            } else if(opt->count() == 0 && default_also) {
+                j[name] = false;
+            }
+        }
+    }
+
+    for(const CLI::App *subcom : app->get_subcommands({}))
+        j[subcom->get_name()] = json(to_config(subcom, default_also, false, ""));
+
+    return j.dump(4);
+}
+
+inline std::vector<CLI::ConfigItem> ConfigJSON::from_config(std::istream &input) const {
+    json j;
+    input >> j;
+    return _from_config(j);
+}
+
+inline std::vector<CLI::ConfigItem>
+ConfigJSON::_from_config(json j, std::string name, std::vector<std::string> prefix) const {
+    std::vector<CLI::ConfigItem> results;
+
+    if(j.is_object()) {
+        for(json::iterator item = j.begin(); item != j.end(); ++item) {
+            auto copy_prefix = prefix;
+            if(!name.empty())
+                copy_prefix.push_back(name);
+            auto sub_results = _from_config(*item, item.key(), copy_prefix);
+            results.insert(results.end(), sub_results.begin(), sub_results.end());
+        }
+    } else if(!name.empty()) {
+        results.emplace_back();
+        CLI::ConfigItem &res = results.back();
+        res.name = name;
+        res.parents = prefix;
+        if(j.is_boolean()) {
+            res.inputs = {j.get<bool>() ? "true" : "false"};
+        } else if(j.is_number()) {
+            std::stringstream ss;
+            ss << j.get<double>();
+            res.inputs = {ss.str()};
+        } else if(j.is_string()) {
+            res.inputs = {j.get<std::string>()};
+        } else if(j.is_array()) {
+            for(std::string ival : j)
+                res.inputs.push_back(ival);
+        } else {
+            throw CLI::ConversionError("Failed to convert " + name);
+        }
+    } else {
+        throw CLI::ConversionError("You must make all top level values objects in json!");
+    }
+
+    return results;
+}
+
+// ---------------- JSON Config file ----------- END //
+//
+//
+// ---------------- TOML Config file ----------- BEGIN //
+
+using namespace toml::literals::toml_literals;
+
+inline std::string
+ConfigTOML::to_config(const CLI::App *app, bool default_also, bool write_description, std::string prefix) const {
+    bool is_initialised;
+
+    std::function<toml::basic_value<toml::preserve_comments>(const CLI::App *, std::string)> get_values;
+
+    get_values = [&get_values, &is_initialised, default_also, write_description](const CLI::App *app,
+                                                                                 std::string subcom_name = "") {
+        toml::basic_value<toml::preserve_comments> j;
+        is_initialised = false;
+        for(const CLI::Option *opt : app->get_options({})) {
+            bool missing_entry = false;
+            // Only process configurable options
+            if((!opt->get_lnames().empty() || !opt->get_snames().empty()) && opt->get_configurable()) {
+                std::string name = (!opt->get_lnames().empty()) ? opt->get_lnames()[0] : opt->get_snames()[0];
+
+                // Non-flags
+                if(opt->get_type_size() != 0) {
+
+                    // If the option was found on command line
+                    if(opt->count() == 1)
+                        j[name] = opt->results().at(0);
+                    else if(opt->count() > 1) {
+                        j[name] = opt->results();
+                    }
+                    // If the option has a default and is requested by optional argument
+                    else if(default_also && !opt->get_default_str().empty()) {
+                        std::string default_str = opt->get_default_str();
+                        int n_res;
+                        std::vector<std::string> default_vals;
+                        n_res = detail::_split_result_str(std::move(default_str), opt->get_delimiter(), default_vals);
+                        if(default_vals.size() == 1)
+                            j[name] = default_vals[0];
+                        else
+                            j[name] = default_vals;
+
+                    } else if(default_also)
+                        j[name] = "";
+                    else
+                        missing_entry = true;
+
+                    // Flag, one passed
+                } else if(opt->count() == 1) {
+                    j[name] = opt->results();
+
+                    // Flag, multiple passed
+                } else if(opt->count() > 1) {
+                    j[name] = opt->count();
+
+                    // Flag, not present
+                } else if(opt->count() == 0) {
+                    if(default_also)
+                        j[name] = opt->get_default_str();
+                    else
+                        j[name] = false;
+                } else
+                    missing_entry = true;
+
+                if(write_description && !missing_entry) {
+                    std::vector<std::string> comment = detail::get_description_for_TOML(opt);
+                    j[name].comments() = comment;
+                }
+            }
+        }
+
+        for(const CLI::App *subcom : app->get_subcommands({})) {
+            toml::basic_value<toml::preserve_comments> _temp_toml = get_values(subcom, subcom->get_name());
+            if(is_initialised)
+                j[subcom->get_name()] = _temp_toml;
+        }
+
+        if(!j.is_uninitialized())
+            is_initialised = true;
+
+        if(write_description) {
+            std::vector<std::string> comment = detail::get_description_for_TOML(app);
+            j.comments() = comment;
+        }
+        return j;
+    };
+
+    // Get values and comments for main app
+    toml::basic_value<toml::preserve_comments> config_toml = get_values(app, "");
+
+    std::stringstream config_stream;
+    try {
+        config_stream << config_toml;
+
+    } catch(const std::exception &e) {
+        std::cerr << "[WARNING] (Internal to toml11) " << e.what() << "\n\n"
+                  << "[WARNING] No configuration present to save to TOML file.\n"
+                  << "[WARNING] Try either running with default_also==TRUE\n"
+                  << "[WARNING]  orwith some command line arguments.\n"
+                  << "[WARNING] TOML configuration file will be empty.\n"
+                  << std::endl;
+    }
+
+    std::string _temp, config_string;
+    while(getline(config_stream, _temp)) {
+        config_string.append(_temp);
+        config_string.push_back('\n');
+    }
+
+    return config_string;
+}
+
+inline std::vector<CLI::ConfigItem> ConfigTOML::from_config(std::istream &input) const {
+    toml::basic_value<toml::preserve_comments> config_file = toml::parse(input);
+    return _from_config(config_file);
+}
+
+inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<toml::preserve_comments> j,
+                                                             std::string name,
+                                                             std::vector<std::string> prefix) const {
+    std::vector<CLI::ConfigItem> results;
+
+    if(j.is_object()) {
+        for(json::iterator item = j.begin(); item != j.end(); ++item) {
+            auto copy_prefix = prefix;
+            if(!name.empty())
+                copy_prefix.push_back(name);
+            auto sub_results = _from_config(*item, item.key(), copy_prefix);
+            results.insert(results.end(), sub_results.begin(), sub_results.end());
+        }
+    } else if(!name.empty()) {
+        results.emplace_back();
+        CLI::ConfigItem &res = results.back();
+        res.name = name;
+        res.parents = prefix;
+        if(j.is_boolean()) {
+            res.inputs = {j.get<bool>() ? "true" : "false"};
+        } else if(j.is_number()) {
+            std::stringstream ss;
+            ss << j.get<double>();
+            res.inputs = {ss.str()};
+        } else if(j.is_string()) {
+            res.inputs = {j.get<std::string>()};
+        } else if(j.is_array()) {
+            for(std::string ival : j)
+                res.inputs.push_back(ival);
+        } else {
+            throw CLI::ConversionError("Failed to convert " + name);
+        }
+    } else {
+        throw CLI::ConversionError("You must make all top level values objects in json!");
+    }
+
+    return results;
+}
+
+// ---------------- TOML Config file ----------- END //
+
 }  // namespace CLI
