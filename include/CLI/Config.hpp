@@ -659,36 +659,52 @@ inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<t
                                                              std::vector<std::string> prefix) const {
     std::vector<CLI::ConfigItem> results;
 
-    // if(j.is_object()) {
-    //     for(json::iterator item = j.begin(); item != j.end(); ++item) {
-    //         auto copy_prefix = prefix;
-    //         if(!name.empty())
-    //             copy_prefix.push_back(name);
-    //         auto sub_results = _from_config(*item, item.key(), copy_prefix);
-    //         results.insert(results.end(), sub_results.begin(), sub_results.end());
-    //     }
-    // } else if(!name.empty()) {
-    //     results.emplace_back();
-    //     CLI::ConfigItem &res = results.back();
-    //     res.name = name;
-    //     res.parents = prefix;
-    //     if(j.is_boolean()) {
-    //         res.inputs = {j.get<bool>() ? "true" : "false"};
-    //     } else if(j.is_number()) {
-    //         std::stringstream ss;
-    //         ss << j.get<double>();
-    //         res.inputs = {ss.str()};
-    //     } else if(j.is_string()) {
-    //         res.inputs = {j.get<std::string>()};
-    //     } else if(j.is_array()) {
-    //         for(std::string ival : j)
-    //             res.inputs.push_back(ival);
-    //     } else {
-    //         throw CLI::ConversionError("Failed to convert " + name);
-    //     }
-    // } else {
-    //     throw CLI::ConversionError("You must make all top level values objects in json!");
-    // }
+    auto table = j.as_table();
+
+    for(auto element : table) {
+        auto key = element.first;
+        auto value = element.second;
+
+        if(value.is_uninitialized()) {
+            continue;
+        } else if(value.is_table()) {
+            prefix.push_back(key);
+            auto sub_results = _from_config(value, key, prefix);
+            results.insert(results.end(), sub_results.begin(), sub_results.end());
+            prefix.pop_back();
+        } else {
+            results.emplace_back();
+            auto &res = results.back();
+            res.name = key;
+            res.parents = prefix;
+
+            if(value.is_boolean()) {
+                res.inputs = {value.as_boolean() ? "true" : "false"};
+            } else if(value.is_string()) {
+                res.inputs = {value.as_string()};
+            } else if(value.is_integer()) {
+                res.inputs = {std::to_string(value.as_integer())};
+            } else if(value.is_floating()) {
+                res.inputs = {std::to_string(value.as_floating())};
+            } else if(value.is_offset_datetime()) {
+                // implement
+                std::cerr << "Conversion from offset datetime to be implemented.\n";
+            } else if(value.is_local_datetime()) {
+                // implement
+                std::cerr << "Conversion from local datetime to be implemented.\n";
+            } else if(value.is_local_date()) {
+                // implement
+                std::cerr << "Conversion from local date to be implemented.\n";
+            }
+            else if(value.is_local_time()) {
+                // implement
+                std::cerr << "Conversion from local time to be implemented.\n";
+            } else if(value.is_array()) {
+                for(auto ival : value.as_array())
+                    res.inputs.push_back(ival.as_string());
+            }
+        }
+    }
 
     return results;
 }
