@@ -678,30 +678,43 @@ inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<t
             res.name = key;
             res.parents = prefix;
 
-            if(value.is_boolean()) {
+            switch(value.type()) {
+
+            case toml::value_t::boolean:
                 res.inputs = {value.as_boolean() ? "true" : "false"};
-            } else if(value.is_string()) {
+                break;
+            case toml::value_t::string:
                 res.inputs = {value.as_string()};
-            } else if(value.is_integer()) {
+                break;
+            case toml::value_t::integer:
                 res.inputs = {std::to_string(value.as_integer())};
-            } else if(value.is_floating()) {
+                break;
+            case toml::value_t::floating:
                 res.inputs = {std::to_string(value.as_floating())};
-            } else if(value.is_offset_datetime()) {
+                break;
+            case toml::value_t::offset_datetime:
                 // implement
                 std::cerr << "Conversion from offset datetime to be implemented.\n";
-            } else if(value.is_local_datetime()) {
+                break;
+            case toml::value_t::local_datetime:
                 // implement
                 std::cerr << "Conversion from local datetime to be implemented.\n";
-            } else if(value.is_local_date()) {
+                break;
+            case toml::value_t::local_date:
                 // implement
                 std::cerr << "Conversion from local date to be implemented.\n";
-            }
-            else if(value.is_local_time()) {
+                break;
+            case toml::value_t::local_time:
                 // implement
                 std::cerr << "Conversion from local time to be implemented.\n";
-            } else if(value.is_array()) {
+                break;
+            case toml::value_t::array:
                 for(auto ival : value.as_array())
                     res.inputs.push_back(ival.as_string());
+                break;
+
+            default:
+                break;
             }
         }
     }
