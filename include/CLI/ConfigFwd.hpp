@@ -168,18 +168,6 @@ class ConfigBase : public Config {
     }
 };
 
-/// the default Config is the TOML file format
-class ConfigTOML : public Config {
-  public:
-    std::string to_config(const App *app, bool default_also, bool write_description, std::string prefix) const override;
-    std::vector<ConfigItem> from_config(std::istream &input) const override;
-
-  private:
-    std::vector<ConfigItem> _from_config(toml::basic_value<toml::preserve_comments> j,
-                                         std::string name = "",
-                                         std::vector<std::string> prefix = {}) const;
-};
-
 /// ConfigINI generates a "standard" INI compliant output
 class ConfigINI : public ConfigBase {
 
@@ -194,11 +182,42 @@ class ConfigINI : public ConfigBase {
 };
 
 class ConfigJSON : public Config {
+
   public:
     std::string to_config(const App *app, bool default_also, bool, std::string) const override;
     std::vector<ConfigItem> from_config(std::istream &input) const override;
     std::vector<ConfigItem> _from_config(json j, std::string name = "", std::vector<std::string> prefix = {}) const;
 };
+
+#define DEFAULT_TIME_FORMAT "%Y-%m-%d %H:%M:%S %Z"
+
+/// the default Config is the TOML file format
+template <typename T> class ConfigTOML_CustomTime : public Config {
+  private:
+    std::string time_format = DEFAULT_TIME_FORMAT;
+    bool use_local_timezone = true;
+    T time_unit;
+
+  public:
+    ConfigTOML_CustomTime(){};
+    ConfigTOML_CustomTime(const std::string &time_format) : time_format(time_format){};
+    ConfigTOML_CustomTime(const std::string &&time_format) : time_format(std::move(time_format)){};
+    ConfigTOML_CustomTime(const bool &use_local_timezone, const std::string &time_format = DEFAULT_TIME_FORMAT)
+        : use_local_timezone(use_local_timezone), time_format(time_format){};
+    ConfigTOML_CustomTime(const bool &use_local_timezone, const std::string &&time_format = DEFAULT_TIME_FORMAT)
+        : use_local_timezone(use_local_timezone), time_format(std::move(time_format)){};
+
+    std::string to_config(const App *app, bool default_also, bool write_description, std::string prefix) const override;
+    std::vector<ConfigItem> from_config(std::istream &input) const override;
+    void set_datetime_format(std::string format, bool use_local_timezone);
+
+  private:
+    std::vector<ConfigItem> _from_config(toml::basic_value<toml::preserve_comments> j,
+                                         std::string name = "",
+                                         std::vector<std::string> prefix = {}) const;
+};
+
+using ConfigTOML = ConfigTOML_CustomTime<std::chrono::seconds>;
 
 // [CLI11:config_fwd_hpp:end]
 }  // namespace CLI

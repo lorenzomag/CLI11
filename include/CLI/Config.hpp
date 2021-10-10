@@ -9,8 +9,10 @@
 // [CLI11:public_includes:set]
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <fstream>
 #include <functional>
+#include <iomanip>
 #include <iostream>
 #include <sstream>
 #include <string>
@@ -542,8 +544,11 @@ ConfigJSON::_from_config(json j, std::string name, std::vector<std::string> pref
 
 using namespace toml::literals::toml_literals;
 
-inline std::string
-ConfigTOML::to_config(const CLI::App *app, bool default_also, bool write_description, std::string prefix) const {
+template <typename T>
+inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
+                                                    bool default_also,
+                                                    bool write_description,
+                                                    std::string prefix) const {
     bool is_initialised;
 
     std::function<toml::basic_value<toml::preserve_comments>(const CLI::App *, std::string)> get_values;
@@ -648,14 +653,17 @@ ConfigTOML::to_config(const CLI::App *app, bool default_also, bool write_descrip
     return config_string;
 }
 
-inline std::vector<CLI::ConfigItem> ConfigTOML::from_config(std::istream &input) const {
+template <typename T>
+inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::from_config(std::istream &input) const {
     toml::basic_value<toml::preserve_comments> config_file = toml::parse(input);
     return _from_config(config_file);
 }
 
-inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<toml::preserve_comments> j,
-                                                             std::string name,
-                                                             std::vector<std::string> prefix) const {
+using time_point = std::chrono::system_clock::time_point;
+template <typename T>
+inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml::basic_value<toml::preserve_comments> j,
+                                                                     std::string name,
+                                                                     std::vector<std::string> prefix) const {
     std::vector<CLI::ConfigItem> results;
 
     auto table = j.as_table();
@@ -677,6 +685,7 @@ inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<t
             res.name = key;
             res.parents = prefix;
 
+            std::stringstream ss;
             switch(value.type()) {
 
             case toml::value_t::boolean:
@@ -692,27 +701,34 @@ inline std::vector<CLI::ConfigItem> ConfigTOML::_from_config(toml::basic_value<t
                 res.inputs = {std::to_string(value.as_floating())};
                 break;
             case toml::value_t::offset_datetime:
-                // implement
-                std::cerr << "Conversion from offset datetime to be implemented.\n";
-                break;
             case toml::value_t::local_datetime:
-                // implement
-                std::cerr << "Conversion from local datetime to be implemented.\n";
+            case toml::value_t::local_date: {
+                auto time = toml::get<std::chrono::system_clock::time_point>(value);
+                std::time_t tt = std::chrono::system_clock::to_time_t(time);
+                std::tm tm;
+                if(this->use_local_timezone) {
+                    tm = *std::localtime(&tt);  // Locale time-zone, usually UTC by default.
+
+                } else
+                    tm = *std::gmtime(&tt);  // UTC
+                ss << std::put_time(&tm, this->time_format.c_str());
+                res.inputs = {ss.str()};
                 break;
-            case toml::value_t::local_date:
-                // implement
-                std::cerr << "Conversion from local date to be implemented.\n";
+            }
+            case toml::value_t::local_time: {
+                auto time = toml::get<decltype(this->time_unit)>(value);
+
+                ss << std::to_string(time.count());
+                res.inputs = {ss.str()};
                 break;
-            case toml::value_t::local_time:
-                // implement
-                std::cerr << "Conversion from local time to be implemented.\n";
-                break;
+            }
             case toml::value_t::array:
                 for(auto ival : value.as_array())
                     res.inputs.push_back(ival.as_string());
                 break;
 
             default:
+                std::cerr << "[CLI11 - WARNING] Could not convert " << key << " from any known TOML type." << std::endl;
                 break;
             }
         }
