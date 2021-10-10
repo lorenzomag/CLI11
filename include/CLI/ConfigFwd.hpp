@@ -17,9 +17,6 @@
 #include "Error.hpp"
 #include "StringTools.hpp"
 
-#include <nlohmann/json.hpp>
-using json = nlohmann::json;
-
 #include <toml11/toml.hpp>
 
 namespace CLI {
@@ -213,7 +210,7 @@ template <typename T> class ConfigTOML_CustomTime : public Config {
 
     // Convert current set of command line arguments to TOML config file
     std::string to_config(const App *app, bool default_also, bool write_description, std::string prefix) const override;
-    
+
     // Convert TOML config file to current set of Command Line Arguments (overridden by user input command line args)
     std::vector<ConfigItem> from_config(std::istream &input) const override;
 
