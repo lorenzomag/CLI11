@@ -97,8 +97,12 @@ cmake_dependent_option(
   CLI11_CLANG_TIDY "Look for and use Clang-Tidy" OFF
   "CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME;NOT CMAKE_VERSION VERSION_LESS 3.6" OFF)
 
-set(CLI11_FULL_TOML_PARSER OFF CACHE BOOL "Installs full c++11 TOML parser")
-set(CLI11_CLANG_TIDY_OPTIONS "" CACHE STRING "Clang tidy options, such as -fix, semicolon separated")
+set(CLI11_FULL_TOML_PARSER
+    OFF
+    CACHE BOOL "Installs full c++11 TOML parser")
+set(CLI11_CLANG_TIDY_OPTIONS
+    ""
+    CACHE STRING "Clang tidy options, such as -fix, semicolon separated")
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND NOT DEFINED CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 11)
@@ -181,17 +185,21 @@ endif()
 # Update submodules
 find_package(Git QUIET)
 if(GIT_FOUND AND EXISTS "${PROJECT_SOURCE_DIR}/.git")
-# Update submodules as needed
-    option(GIT_SUBMODULE "Check submodules during build" ON)
-    if(GIT_SUBMODULE)
-        message(STATUS "Submodule update")
-        execute_process(COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
-                        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-                        RESULT_VARIABLE GIT_SUBMOD_RESULT)
-        if(NOT GIT_SUBMOD_RESULT EQUAL "0")
-            message(FATAL_ERROR "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules")
-        endif()
+  # Update submodules as needed
+  option(GIT_SUBMODULE "Check submodules during build" ON)
+  if(GIT_SUBMODULE)
+    message(STATUS "Submodule update")
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} submodule update --init --recursive
+      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+      RESULT_VARIABLE GIT_SUBMOD_RESULT)
+    if(NOT GIT_SUBMOD_RESULT EQUAL "0")
+      message(
+        FATAL_ERROR
+          "git submodule update --init --recursive failed with ${GIT_SUBMOD_RESULT}, please checkout submodules"
+      )
     endif()
+  endif()
 endif()
 
 # This folder should be installed
