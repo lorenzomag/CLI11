@@ -448,24 +448,38 @@ ConfigBase::to_config(const App *app, bool default_also, bool write_description,
 
 // ---------------- TOML Config file ----------- BEGIN //
 
+using toml_value = toml::basic_value<toml::preserve_comments>;
 
+// Convert current set of command line arguments to TOML config file
 template <typename T>
-inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
-                                                       bool default_also,
-                                                       bool write_description,
-                                                       std::string prefix) const {
-    bool is_initialised;
+inline std::string ConfigTOML_CustomTime<T>::to_config(
+    const CLI::App *app,     // Current CLI app
+    bool default_also,       // Boolean: output also default values of CLI::ConfigItems
+    bool write_description,  // Boolean: include descriptions of CLI::COnfigItems as comments to TOML file
+    std::string prefix       // Unitilised (needed to override)
+) const {
 
-    std::function<toml::basic_value<toml::preserve_comments>(const CLI::App *, std::string)> get_values;
+    bool is_initialised;  // Boolean: latest parsed TOML value is initialised
 
+    // Defined to reference in lambda definition
+    std::function<toml_value(const CLI::App *, std::string)> get_values;
+
+    // Lambda function to convert CLI items to TOML entries
+    // recursivity used to consider subcommand chains
     get_values = [&get_values, &is_initialised, default_also, write_description](const CLI::App *app,
                                                                                  std::string subcom_name = "") {
-        toml::basic_value<toml::preserve_comments> j;
-        is_initialised = false;
+        toml_value j;  // Base for TOML file
+        is_initialised =
+            false;  // Initialisation of boolean to false.
+                    // If false until the end of the function, the currently analysed value is not initialised
+
+        // Loop through all CLI options for the current CLI app
         for(const CLI::Option *opt : app->get_options({})) {
-            bool missing_entry = false;
+            bool missing_entry =
+                false;  // Boolean: if by end of loop iteration still false, current CLI option was not utilised
             // Only process configurable options
             if((!opt->get_lnames().empty() || !opt->get_snames().empty()) && opt->get_configurable()) {
+                // Get option long name (if possible), otherwise, short name
                 std::string name = (!opt->get_lnames().empty()) ? opt->get_lnames()[0] : opt->get_snames()[0];
 
                 // Non-flags
@@ -489,8 +503,10 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
                             j[name] = default_vals;
 
                     } else if(default_also)
+                        // Leave empty if default is required, but no default value was found
                         j[name] = "";
                     else
+                        // Default not required, missing entry
                         missing_entry = true;
 
                     // Flag, one passed
@@ -511,88 +527,109 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
                     missing_entry = true;
 
                 if(write_description && !missing_entry) {
+                    // Write description if entry not missing
                     std::vector<std::string> comment = detail::get_description_for_TOML(opt);
                     j[name].comments() = comment;
                 }
             }
         }
-
+        // Run recursively through subcommands of CLI app
         for(const CLI::App *subcom : app->get_subcommands({})) {
-            toml::basic_value<toml::preserve_comments> _temp_toml = get_values(subcom, subcom->get_name());
+            toml_value _temp_toml = get_values(subcom, subcom->get_name());
             if(is_initialised)
                 j[subcom->get_name()] = _temp_toml;
         }
 
         if(!j.is_uninitialized())
+            // Check that j is initialised
             is_initialised = true;
 
         if(write_description) {
+            // Write description for main app
             std::vector<std::string> comment = detail::get_description_for_TOML(app);
             j.comments() = comment;
         }
+
+        // Return TOML value
         return j;
     };
 
-    // Get values and comments for main app
-    toml::basic_value<toml::preserve_comments> config_toml = get_values(app, "");
+    // Get values and comments for main app, and recuvsively for subcommands
+    toml_value config_toml = get_values(app, "");
 
+    // Cast toml file into stringstream to return string
     std::stringstream config_stream;
-    toml::basic_value<toml::preserve_comments> test_test_toml;
+
     try {
+        // If any TOML value is config_toml is uninitialised, this will fail. Caught by exception
         config_stream << config_toml;
 
     } catch(const std::exception &e) {
         std::string error_msg = "No configuration present to save to TOML file.\n"
-                              "Try either running with default_also==TRUE\n"
-                              "or with some command line arguments.\n"
-                              "TOML configuration file will be empty.";
-        throw CLI::ParseError(error_msg,CLI::ExitCodes::ConversionError);
+                                "Try either running with default_also==TRUE\n"
+                                "or with some command line arguments.\n"
+                                "TOML configuration file will be empty.";
+        throw CLI::ParseError(error_msg, CLI::ExitCodes::ConversionError);
     }
 
+    // Cast stringstream to string
     std::string _temp, config_string;
     while(getline(config_stream, _temp)) {
         config_string.append(_temp);
         config_string.push_back('\n');
     }
 
+    // Return TOML config file as string
     return config_string;
 }
 
+// Convert TOML config file to current set of Command Line Arguments (overridden by user input command line args)
 template <typename T>
 inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::from_config(std::istream &input) const {
-    toml::basic_value<toml::preserve_comments> config_file = toml::parse(input);
+    // Use TOML11 parser to parse TOML configuration file and store it in a toml::basic_value instance
+    toml_value config_file = toml::parse(input);
+
+    // Convert toml_value to std::vector<CLI::ConfigItem>
     return _from_config(config_file);
 }
 
 using time_point = std::chrono::system_clock::time_point;
+
+// Convert toml_value to std::vector<CLI::ConfigItem>
 template <typename T>
-inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml::basic_value<toml::preserve_comments> j,
-                                                                           std::string name,
-                                                                           std::vector<std::string> prefix) const {
+inline std::vector<CLI::ConfigItem>
+ConfigTOML_CustomTime<T>::_from_config(toml_value j, std::string name, std::vector<std::string> prefix) const {
+
+    // Vector to return
     std::vector<CLI::ConfigItem> results;
 
+    // Cast toml_value to table (Whole TOML config is a TOML table)
+    // This function will be recursively used on subtables of j
     auto table = j.as_table();
 
+    // Loop through entries of table
     for(auto element : table) {
-        auto key = element.first;
-        auto value = element.second;
+        auto key = element.first;     // grab key of key-value pari
+        auto value = element.second;  // grab value of key-value pari
 
         if(value.is_uninitialized()) {
             continue;
         } else if(value.is_table()) {
+            // if value is a table, recursively apply _from_config to it, appending key to list of parent CLI commands
             prefix.push_back(key);
             auto sub_results = _from_config(value, key, prefix);
             results.insert(results.end(), sub_results.begin(), sub_results.end());
             prefix.pop_back();
         } else {
-            results.emplace_back();
-            auto &res = results.back();
-            res.name = key;
-            res.parents = prefix;
+            results.emplace_back();      // Create instance of CLI::ConfigItem
+            auto &res = results.back();  // Get reference to such instance
+            res.name = key;              // Assign name to instance
+            res.parents = prefix;        // Assign list of parents to instance
 
-            std::stringstream ss;
+            std::stringstream ss;  // Declare stringstream to use in switch statement
+
+            // Determine type of toml value and convert to string
             switch(value.type()) {
-
             case toml::value_t::boolean:
                 res.inputs = {value.as_boolean() ? "true" : "false"};
                 break;
@@ -605,21 +642,30 @@ inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml:
             case toml::value_t::floating:
                 res.inputs = {std::to_string(value.as_floating())};
                 break;
+
+            // The following types (offset datetime, local_datetime, and local_date)
+            // can be converted to a std::chrono::system_clock::time_point
             case toml::value_t::offset_datetime:
             case toml::value_t::local_datetime:
             case toml::value_t::local_date: {
                 auto time = toml::get<std::chrono::system_clock::time_point>(value);
                 std::time_t tt = std::chrono::system_clock::to_time_t(time);
                 std::tm tm;
+
+                // Use use_local_timezone boolean class member to determine timezone to convert to
                 if(this->use_local_timezone) {
-                    tm = *std::localtime(&tt);  // Locale time-zone, usually UTC by default.
+                    tm = *std::localtime(&tt);  // Local time-zone
 
                 } else
                     tm = *std::gmtime(&tt);  // UTC
-                ss << std::put_time(&tm, this->time_format.c_str());
+
+                ss << std::put_time(
+                    &tm, this->time_format.c_str());  // Use time_format string class member to convert to string
                 res.inputs = {ss.str()};
                 break;
             }
+            // The following type (local_time) cannot be converted to time_point since a date is missing
+            // It will be converted in a std::chrono::duration based on the typename of the time_unit class member
             case toml::value_t::local_time: {
                 auto time = toml::get<decltype(this->time_unit)>(value);
 
@@ -635,9 +681,8 @@ inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml:
             default:
                 std::stringstream ss_error;
                 ss_error << "Could not convert the key-value pair \"" << key << "\" from any known TOML type.";
-                throw CLI::ParseError(ss_error.str(),CLI::ExitCodes::ConversionError);
+                throw CLI::ParseError(ss_error.str(), CLI::ExitCodes::ConversionError);
                 break;
-
             }
         }
     }
