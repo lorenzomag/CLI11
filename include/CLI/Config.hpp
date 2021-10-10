@@ -22,7 +22,6 @@
 #include "ConfigFwd.hpp"
 #include "StringTools.hpp"
 
-using namespace std::string_literals;
 
 namespace CLI {
 // [CLI11:config_hpp:verbatim]
