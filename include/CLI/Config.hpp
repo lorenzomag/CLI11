@@ -448,7 +448,6 @@ ConfigBase::to_config(const App *app, bool default_also, bool write_description,
 
 // ---------------- TOML Config file ----------- BEGIN //
 
-using namespace toml::literals::toml_literals;
 
 template <typename T>
 inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
