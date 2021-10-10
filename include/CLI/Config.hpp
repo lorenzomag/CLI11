@@ -24,7 +24,6 @@
 #include "ConfigFwd.hpp"
 #include "StringTools.hpp"
 
-
 namespace CLI {
 // [CLI11:config_hpp:verbatim]
 namespace detail {
@@ -447,108 +446,15 @@ ConfigBase::to_config(const App *app, bool default_also, bool write_description,
     return out.str();
 }
 
-// ---------------- JSON Config file ----------- BEGIN //
-using nlohmann::json;
-inline std::string ConfigJSON::to_config(const CLI::App *app, bool default_also, bool, std::string) const {
-
-    json j;
-
-    for(const CLI::Option *opt : app->get_options({})) {
-
-        // Only process option with a long-name and configurable
-        if(!opt->get_lnames().empty() && opt->get_configurable()) {
-            std::string name = opt->get_lnames()[0];
-
-            // Non-flags
-            if(opt->get_type_size() != 0) {
-
-                // If the option was found on command line
-                if(opt->count() == 1)
-                    j[name] = opt->results().at(0);
-                else if(opt->count() > 1)
-                    j[name] = opt->results();
-
-                // If the option has a default and is requested by optional argument
-                else if(default_also && !opt->get_default_str().empty())
-                    j[name] = opt->get_default_str();
-
-                // Flag, one passed
-            } else if(opt->count() == 1) {
-                j[name] = true;
-
-                // Flag, multiple passed
-            } else if(opt->count() > 1) {
-                j[name] = opt->count();
-
-                // Flag, not present
-            } else if(opt->count() == 0 && default_also) {
-                j[name] = false;
-            }
-        }
-    }
-
-    for(const CLI::App *subcom : app->get_subcommands({}))
-        j[subcom->get_name()] = json(to_config(subcom, default_also, false, ""));
-
-    return j.dump(4);
-}
-
-inline std::vector<CLI::ConfigItem> ConfigJSON::from_config(std::istream &input) const {
-    json j;
-    input >> j;
-    return _from_config(j);
-}
-
-inline std::vector<CLI::ConfigItem>
-ConfigJSON::_from_config(json j, std::string name, std::vector<std::string> prefix) const {
-    std::vector<CLI::ConfigItem> results;
-
-    if(j.is_object()) {
-        for(json::iterator item = j.begin(); item != j.end(); ++item) {
-            auto copy_prefix = prefix;
-            if(!name.empty())
-                copy_prefix.push_back(name);
-            auto sub_results = _from_config(*item, item.key(), copy_prefix);
-            results.insert(results.end(), sub_results.begin(), sub_results.end());
-        }
-    } else if(!name.empty()) {
-        results.emplace_back();
-        CLI::ConfigItem &res = results.back();
-        res.name = name;
-        res.parents = prefix;
-        if(j.is_boolean()) {
-            res.inputs = {j.get<bool>() ? "true" : "false"};
-        } else if(j.is_number()) {
-            std::stringstream ss;
-            ss << j.get<double>();
-            res.inputs = {ss.str()};
-        } else if(j.is_string()) {
-            res.inputs = {j.get<std::string>()};
-        } else if(j.is_array()) {
-            for(std::string ival : j)
-                res.inputs.push_back(ival);
-        } else {
-            throw CLI::ConversionError("Failed to convert " + name);
-        }
-    } else {
-        throw CLI::ConversionError("You must make all top level values objects in json!");
-    }
-
-    return results;
-}
-
-// ---------------- JSON Config file ----------- END //
-//
-//
 // ---------------- TOML Config file ----------- BEGIN //
 
 using namespace toml::literals::toml_literals;
 
 template <typename T>
 inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
-                                                    bool default_also,
-                                                    bool write_description,
-                                                    std::string prefix) const {
+                                                       bool default_also,
+                                                       bool write_description,
+                                                       std::string prefix) const {
     bool is_initialised;
 
     std::function<toml::basic_value<toml::preserve_comments>(const CLI::App *, std::string)> get_values;
@@ -632,16 +538,16 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
     toml::basic_value<toml::preserve_comments> config_toml = get_values(app, "");
 
     std::stringstream config_stream;
+    toml::basic_value<toml::preserve_comments> test_test_toml;
     try {
         config_stream << config_toml;
 
     } catch(const std::exception &e) {
-        std::cerr << "[WARNING] (Internal to toml11) " << e.what() << "\n\n"
-                  << "[WARNING] No configuration present to save to TOML file.\n"
-                  << "[WARNING] Try either running with default_also==TRUE\n"
-                  << "[WARNING] or with some command line arguments.\n"
-                  << "[WARNING] TOML configuration file will be empty.\n"
-                  << std::endl;
+        std::string error_msg = "No configuration present to save to TOML file.\n"
+                              "Try either running with default_also==TRUE\n"
+                              "or with some command line arguments.\n"
+                              "TOML configuration file will be empty.";
+        throw CLI::ParseError(error_msg,CLI::ExitCodes::ConversionError);
     }
 
     std::string _temp, config_string;
@@ -662,8 +568,8 @@ inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::from_config(std::i
 using time_point = std::chrono::system_clock::time_point;
 template <typename T>
 inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml::basic_value<toml::preserve_comments> j,
-                                                                     std::string name,
-                                                                     std::vector<std::string> prefix) const {
+                                                                           std::string name,
+                                                                           std::vector<std::string> prefix) const {
     std::vector<CLI::ConfigItem> results;
 
     auto table = j.as_table();
@@ -728,8 +634,11 @@ inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::_from_config(toml:
                 break;
 
             default:
-                std::cerr << "[CLI11 - WARNING] Could not convert " << key << " from any known TOML type." << std::endl;
+                std::stringstream ss_error;
+                ss_error << "Could not convert the key-value pair \"" << key << "\" from any known TOML type.";
+                throw CLI::ParseError(ss_error.str(),CLI::ExitCodes::ConversionError);
                 break;
+
             }
         }
     }
