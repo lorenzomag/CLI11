@@ -639,7 +639,7 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(const CLI::App *app,
         std::cerr << "[WARNING] (Internal to toml11) " << e.what() << "\n\n"
                   << "[WARNING] No configuration present to save to TOML file.\n"
                   << "[WARNING] Try either running with default_also==TRUE\n"
-                  << "[WARNING]  orwith some command line arguments.\n"
+                  << "[WARNING] or with some command line arguments.\n"
                   << "[WARNING] TOML configuration file will be empty.\n"
                   << std::endl;
     }
