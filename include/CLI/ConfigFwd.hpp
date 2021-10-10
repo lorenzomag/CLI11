@@ -17,6 +17,11 @@
 #include "Error.hpp"
 #include "StringTools.hpp"
 
+#include <nlohmann/json.hpp>
+using json = nlohmann::json;
+
+#include <toml11/toml.hpp>
+
 namespace CLI {
 // [CLI11:config_fwd_hpp:verbatim]
 
@@ -163,11 +168,8 @@ class ConfigBase : public Config {
     }
 };
 
-/// the default Config is the TOML file format
-using ConfigTOML = ConfigBase;
-
 /// ConfigINI generates a "standard" INI compliant output
-class ConfigINI : public ConfigTOML {
+class ConfigINI : public ConfigBase {
 
   public:
     ConfigINI() {
@@ -178,5 +180,53 @@ class ConfigINI : public ConfigTOML {
         valueDelimiter = '=';
     }
 };
+
+
+/// ConfigTOML_CustomTime generates a TOML v1.0 compliant output
+// Based on git@github.com:ToruNiina/toml11.git
+//
+// The template typename T corresponds to the unit of std::chrono::duration, used for TOML's local time entries
+// By default (see ConfigTOML alias below), T is taken to be std::chrono::seconds
+template <typename T> class ConfigTOML_CustomTime : public Config {
+  private:
+#define DEFAULT_TIME_FORMAT "%Y-%m-%d %H:%M:%S %Z"
+    std::string time_format = DEFAULT_TIME_FORMAT;  // Default format used to convert offset datetime, local datetime,
+                                                    // and local date TOML entries to string
+    bool use_local_timezone = true;  // Boolean: convert offset datetime, local datetime, and local date TOML entries to
+                                     // local timezone std::chrono::time_points Otherwise: convert to UTC time
+    T time_unit;                     // Unit of time for TOML local time entries
+
+  public:
+    //   Constructors
+    ConfigTOML_CustomTime(){};  // Default Constructor
+
+    // Constructors allowing user to set time_format string
+    ConfigTOML_CustomTime(const std::string &time_format) : time_format(time_format){};
+    ConfigTOML_CustomTime(const std::string &&time_format) : time_format(std::move(time_format)){};
+
+    // Constructors allowing user to set use_local_timezone boolean and (if desired) time_format string (defaults to
+    // DEFAULT_TIME_FORMAT)
+    ConfigTOML_CustomTime(const bool &use_local_timezone, const std::string &time_format = DEFAULT_TIME_FORMAT)
+        : use_local_timezone(use_local_timezone), time_format(time_format){};
+    ConfigTOML_CustomTime(const bool &use_local_timezone, const std::string &&time_format = DEFAULT_TIME_FORMAT)
+        : use_local_timezone(use_local_timezone), time_format(std::move(time_format)){};
+
+    // Convert current set of command line arguments to TOML config file
+    std::string to_config(const App *app, bool default_also, bool write_description, std::string prefix) const override;
+    
+    // Convert TOML config file to current set of Command Line Arguments (overridden by user input command line args)
+    std::vector<ConfigItem> from_config(std::istream &input) const override;
+
+  private:
+    // Used internally by from_config
+    std::vector<ConfigItem> _from_config(toml::basic_value<toml::preserve_comments> j,
+                                         std::string name = "",
+                                         std::vector<std::string> prefix = {}) const;
+};
+
+
+// Set default time unit for TOML local time entries to std::chrono::seconds
+using ConfigTOML = ConfigTOML_CustomTime<std::chrono::seconds>;
+
 // [CLI11:config_fwd_hpp:end]
 }  // namespace CLI
