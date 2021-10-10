@@ -456,7 +456,7 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(
     const CLI::App *app,     // Current CLI app
     bool default_also,       // Boolean: output also default values of CLI::ConfigItems
     bool write_description,  // Boolean: include descriptions of CLI::COnfigItems as comments to TOML file
-    std::string prefix       // Unitilised (needed to override)
+    std::string prefix       // Uninitialised (needed to override)
 ) const {
 
     bool is_initialised;  // Boolean: latest parsed TOML value is initialised
