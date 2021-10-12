@@ -615,7 +615,7 @@ ConfigTOML_CustomTime<T>::_from_config(toml_value j, std::string name, std::vect
         if(value.is_uninitialized()) {
             continue;
         } else if(value.is_table()) {
-            // if value is a table, recursively apply _from_config to it, appending key to list of parent CLI commands
+            // if value is a table, recursively apply _from_config() to it, appending key to list of parent CLI commands
             prefix.push_back(key);
             auto sub_results = _from_config(value, key, prefix);
             results.insert(results.end(), sub_results.begin(), sub_results.end());
