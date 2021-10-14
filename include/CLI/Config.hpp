@@ -452,7 +452,7 @@ using toml_value = toml::basic_value<toml::preserve_comments>;
 
 // Convert current set of command line arguments to TOML config file
 template <typename T>
-inline std::string ConfigTOML_CustomTime<T>::to_config(
+inline std::string ConfigTOML<T>::to_config(
     const CLI::App *app,     // Current CLI app
     bool default_also,       // Boolean: output also default values of CLI::ConfigItems
     bool write_description,  // Boolean: include descriptions of CLI::COnfigItems as comments to TOML file
@@ -467,7 +467,7 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(
     // Lambda function to convert CLI items to TOML entries
     // recursivity used to consider subcommand chains
     get_values = [&get_values, &is_initialised, default_also, write_description](const CLI::App *app,
-                                                                                 std::string subcom_name = "") {
+                                                                                 std::string subcom_name) {
         toml_value j;  // Base for TOML file
         is_initialised =
             false;  // Initialisation of boolean to false.
@@ -584,8 +584,7 @@ inline std::string ConfigTOML_CustomTime<T>::to_config(
 }
 
 // Convert TOML config file to current set of Command Line Arguments (overridden by user input command line args)
-template <typename T>
-inline std::vector<CLI::ConfigItem> ConfigTOML_CustomTime<T>::from_config(std::istream &input) const {
+template <typename T> inline std::vector<CLI::ConfigItem> ConfigTOML<T>::from_config(std::istream &input) const {
     // Use TOML11 parser to parse TOML configuration file and store it in a toml::basic_value instance
     toml_value config_file = toml::parse(input);
 
@@ -598,7 +597,7 @@ using time_point = std::chrono::system_clock::time_point;
 // Convert toml_value to std::vector<CLI::ConfigItem>
 template <typename T>
 inline std::vector<CLI::ConfigItem>
-ConfigTOML_CustomTime<T>::_from_config(toml_value j, std::string name, std::vector<std::string> prefix) const {
+ConfigTOML<T>::_from_config(toml_value j, std::string name, std::vector<std::string> prefix) const {
 
     // Vector to return
     std::vector<CLI::ConfigItem> results;
@@ -673,11 +672,10 @@ ConfigTOML_CustomTime<T>::_from_config(toml_value j, std::string name, std::vect
                 res.inputs = {ss.str()};
                 break;
             }
-            case toml::value_t::array:
-                for(auto ival : value.as_array())
-                    res.inputs.push_back(ival.as_string());
+            case toml::value_t::array: 
+                res.inputs = parse_toml_array(value.as_array(), key);
                 break;
-
+            
             default:
                 std::stringstream ss_error;
                 ss_error << "Could not convert the key-value pair \"" << key << "\" from any known TOML type.";
@@ -690,6 +688,79 @@ ConfigTOML_CustomTime<T>::_from_config(toml_value j, std::string name, std::vect
     return results;
 }
 
+template <typename T>
+inline std::vector<std::string> ConfigTOML<T>::parse_toml_array(toml::value array, const std::string &key) const {
+    std::vector<std::string> elements;
+    for(auto value : array.as_array()) {
+        if(value.is_table()) {
+            std::stringstream ss_error;
+            ss_error << "TOML arrays of tables are not supported for conversion to ConfigItem";
+            throw CLI::ParseError(ss_error.str(), CLI::ExitCodes::ConversionError);
+        } else {
+            std::stringstream ss;  // Declare stringstream to use in switch statement
+
+            // Determine type of toml value and convert to string
+            switch(value.type()) {
+            case toml::value_t::boolean:
+                elements.push_back(value.as_boolean() ? "true" : "false");
+                break;
+            case toml::value_t::string:
+                elements.push_back(value.as_string());
+                break;
+            case toml::value_t::integer:
+                elements.push_back(std::to_string(value.as_integer()));
+                break;
+            case toml::value_t::floating:
+                elements.push_back(std::to_string(value.as_floating()));
+                break;
+
+            // The following types (offset datetime, local_datetime, and local_date)
+            // can be converted to a std::chrono::system_clock::time_point
+            case toml::value_t::offset_datetime:
+            case toml::value_t::local_datetime:
+            case toml::value_t::local_date: {
+                auto time = toml::get<std::chrono::system_clock::time_point>(value);
+                std::time_t tt = std::chrono::system_clock::to_time_t(time);
+                std::tm tm;
+
+                // Use use_local_timezone boolean class member to determine timezone to convert to
+                if(use_local_timezone) {
+                    tm = *std::localtime(&tt);  // Local time-zone
+
+                } else
+                    tm = *std::gmtime(&tt);  // UTC
+
+                ss << std::put_time(
+                    &tm, time_format.c_str());  // Use time_format string class member to convert to string
+                elements.push_back(ss.str());
+                break;
+            }
+            // The following type (local_time) cannot be converted to time_point since a date is missing
+            // It will be converted in a std::chrono::duration based on the typename of the time_unit class member
+            case toml::value_t::local_time: {
+                auto time = toml::get<decltype(time_unit)>(value);
+
+                ss << std::to_string(time.count());
+                elements.push_back(ss.str());
+                break;
+            }
+            case toml::value_t::array: {
+                std::vector<std::string> res_vector = parse_toml_array(value.as_array(), key);
+                elements.insert(elements.end(), res_vector.begin(), res_vector.end());
+                break;
+            }
+
+            default:
+                std::stringstream ss_error;
+                ss_error << "Could not convert an element of the array \"" << key << "\" from any known TOML type.";
+                throw CLI::ParseError(ss_error.str(), CLI::ExitCodes::ConversionError);
+                break;
+            }
+        }
+    }
+
+    return elements;
+}
 // ---------------- TOML Config file ----------- END //
 
 }  // namespace CLI
