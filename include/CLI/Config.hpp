@@ -4,7 +4,7 @@
 //
 // SPDX-License-Identifier: BSD-3-Clause
 
-// #pragma once
+#pragma once
 
 // [CLI11:public_includes:set]
 #include <algorithm>
@@ -479,9 +479,8 @@ inline std::string ConfigTOML<T>::to_config(
                 false;  // Boolean: if by end of loop iteration still false, current CLI option was not utilised
             // Only process configurable options
             if((!opt->get_lnames().empty() || !opt->get_snames().empty()) && opt->get_configurable()) {
-                // Get option long name (if possible), otherwise, short name
+                // Get option long name (if available), otherwise, short name
                 std::string name = (!opt->get_lnames().empty()) ? opt->get_lnames()[0] : opt->get_snames()[0];
-
                 // Non-flags
                 if(opt->get_type_size() != 0) {
 
@@ -582,6 +581,11 @@ inline std::string ConfigTOML<T>::to_config(
     // Return TOML config file as string
     return config_string;
 }
+template <typename T>
+template <typename toml_type>
+toml_type ConfigTOML<T>::dump_toml_value(const CLI::Option &opt) const {
+
+};
 
 // Convert TOML config file to current set of Command Line Arguments (overridden by user input command line args)
 template <typename T> inline std::vector<CLI::ConfigItem> ConfigTOML<T>::from_config(std::istream &input) const {
@@ -629,53 +633,38 @@ ConfigTOML<T>::_from_config(toml_value j, std::string name, std::vector<std::str
 
             // Determine type of toml value and convert to string
             switch(value.type()) {
-            case toml::value_t::boolean:
-                res.inputs = {value.as_boolean() ? "true" : "false"};
+            case toml::value_t::boolean: {
+                auto cast_value = toml::get<bool>(value);
+                res.inputs = {std::to_string(cast_value)};
                 break;
-            case toml::value_t::string:
-                res.inputs = {value.as_string()};
+            }
+            case toml::value_t::string: {
+                auto cast_value = toml::get<std::string>(value);
+                res.inputs = {cast_value};
                 break;
-            case toml::value_t::integer:
-                res.inputs = {std::to_string(value.as_integer())};
+            }
+            case toml::value_t::integer: {
+                auto cast_value = toml::get<int>(value);
+                res.inputs = {std::to_string(cast_value)};
                 break;
-            case toml::value_t::floating:
-                res.inputs = {std::to_string(value.as_floating())};
+            }
+            case toml::value_t::floating: {
+                auto cast_value = toml::get<double>(value);
+                res.inputs = {std::to_string(cast_value)};
                 break;
-
-            // The following types (offset datetime, local_datetime, and local_date)
-            // can be converted to a std::chrono::system_clock::time_point
-            case toml::value_t::offset_datetime:
-            case toml::value_t::local_datetime:
-            case toml::value_t::local_date: {
-                auto time = toml::get<std::chrono::system_clock::time_point>(value);
-                std::time_t tt = std::chrono::system_clock::to_time_t(time);
-                std::tm tm;
-
-                // Use use_local_timezone boolean class member to determine timezone to convert to
-                if(this->use_local_timezone) {
-                    tm = *std::localtime(&tt);  // Local time-zone
-
-                } else
-                    tm = *std::gmtime(&tt);  // UTC
-
-                ss << std::put_time(
-                    &tm, this->time_format.c_str());  // Use time_format string class member to convert to string
+            }
+            case toml::value_t::local_datetime: 
+            case toml::value_t::local_date: 
+            case toml::value_t::local_time: 
+            case toml::value_t::offset_datetime: {
+                ss << value;
                 res.inputs = {ss.str()};
                 break;
             }
-            // The following type (local_time) cannot be converted to time_point since a date is missing
-            // It will be converted in a std::chrono::duration based on the typename of the time_unit class member
-            case toml::value_t::local_time: {
-                auto time = toml::get<decltype(this->time_unit)>(value);
-
-                ss << std::to_string(time.count());
-                res.inputs = {ss.str()};
-                break;
-            }
-            case toml::value_t::array: 
+            case toml::value_t::array:
                 res.inputs = parse_toml_array(value.as_array(), key);
                 break;
-            
+
             default:
                 std::stringstream ss_error;
                 ss_error << "Could not convert the key-value pair \"" << key << "\" from any known TOML type.";
@@ -690,7 +679,7 @@ ConfigTOML<T>::_from_config(toml_value j, std::string name, std::vector<std::str
 
 template <typename T>
 inline std::vector<std::string> ConfigTOML<T>::parse_toml_array(toml::value array, const std::string &key) const {
-    std::vector<std::string> elements;
+    std::vector<std::string> array_str;
     for(auto value : array.as_array()) {
         if(value.is_table()) {
             std::stringstream ss_error;
@@ -701,52 +690,37 @@ inline std::vector<std::string> ConfigTOML<T>::parse_toml_array(toml::value arra
 
             // Determine type of toml value and convert to string
             switch(value.type()) {
-            case toml::value_t::boolean:
-                elements.push_back(value.as_boolean() ? "true" : "false");
-                break;
-            case toml::value_t::string:
-                elements.push_back(value.as_string());
-                break;
-            case toml::value_t::integer:
-                elements.push_back(std::to_string(value.as_integer()));
-                break;
-            case toml::value_t::floating:
-                elements.push_back(std::to_string(value.as_floating()));
-                break;
-
-            // The following types (offset datetime, local_datetime, and local_date)
-            // can be converted to a std::chrono::system_clock::time_point
-            case toml::value_t::offset_datetime:
-            case toml::value_t::local_datetime:
-            case toml::value_t::local_date: {
-                auto time = toml::get<std::chrono::system_clock::time_point>(value);
-                std::time_t tt = std::chrono::system_clock::to_time_t(time);
-                std::tm tm;
-
-                // Use use_local_timezone boolean class member to determine timezone to convert to
-                if(use_local_timezone) {
-                    tm = *std::localtime(&tt);  // Local time-zone
-
-                } else
-                    tm = *std::gmtime(&tt);  // UTC
-
-                ss << std::put_time(
-                    &tm, time_format.c_str());  // Use time_format string class member to convert to string
-                elements.push_back(ss.str());
+             case toml::value_t::boolean: {
+                auto cast_value = toml::get<bool>(value);
+                array_str.push_back(std::to_string(cast_value));
                 break;
             }
-            // The following type (local_time) cannot be converted to time_point since a date is missing
-            // It will be converted in a std::chrono::duration based on the typename of the time_unit class member
-            case toml::value_t::local_time: {
-                auto time = toml::get<decltype(time_unit)>(value);
-
-                ss << std::to_string(time.count());
-                elements.push_back(ss.str());
+            case toml::value_t::string: {
+                auto cast_value = toml::get<std::string>(value);
+                array_str.push_back(cast_value);
+                break;
+            }
+            case toml::value_t::integer: {
+                auto cast_value = toml::get<int>(value);
+                array_str.push_back(std::to_string(cast_value));
+                break;
+            }
+            case toml::value_t::floating: {
+                auto cast_value = toml::get<double>(value);
+                array_str.push_back(std::to_string(cast_value));
+                break;
+            }
+            case toml::value_t::local_datetime: 
+            case toml::value_t::local_date: 
+            case toml::value_t::local_time: 
+            case toml::value_t::offset_datetime: {
+                ss << value;
+                array_str.push_back(ss.str());
                 break;
             }
             case toml::value_t::array: {
                 std::vector<std::string> res_vector = parse_toml_array(value.as_array(), key);
-                elements.insert(elements.end(), res_vector.begin(), res_vector.end());
+                array_str.insert(array_str.end(), res_vector.begin(), res_vector.end());
                 break;
             }
 
@@ -759,7 +733,7 @@ inline std::vector<std::string> ConfigTOML<T>::parse_toml_array(toml::value arra
         }
     }
 
-    return elements;
+    return array_str;
 }
 // ---------------- TOML Config file ----------- END //
 

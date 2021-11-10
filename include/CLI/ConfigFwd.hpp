@@ -14,6 +14,7 @@
 #include <vector>
 // [CLI11:public_includes:end]
 
+#include "Option.hpp"
 #include "Error.hpp"
 #include "StringTools.hpp"
 
@@ -227,7 +228,15 @@ template <typename T = std::chrono::seconds> class ConfigTOML : public Config {
     std::vector<ConfigItem> _from_config(toml::basic_value<toml::preserve_comments> j,
                                          std::string name = "",
                                          std::vector<std::string> prefix = {}) const;
+
+    /// Parse a toml::array (with comments preserved), that is a std::vector<toml::value>.
+    /// The elements of the array can be tables or arrays themselves. The former case will raise an error, since no
+    /// valid conversion was found to be appropriate. Arrays of arrays are parsed recursively.
+    /// \return Vector of strings, each string representing an element of the array (or of the subarrays)
     std::vector<std::string> parse_toml_array(toml::value array, const std::string &key) const;
+
+    template<typename toml_type>
+    toml_type dump_toml_value(const CLI::Option &opt) const;
 };
 
 // [CLI11:config_fwd_hpp:end]

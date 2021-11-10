@@ -65,6 +65,7 @@ endif()
 
 option(CLI11_WARNINGS_AS_ERRORS "Turn all warnings into errors (for CI)")
 option(CLI11_SINGLE_FILE "Generate a single header file")
+option(CLI11_FULL_TOML_PARSER "Install full c++11 TOML parser")
 cmake_dependent_option(CLI11_SANITIZERS "Download the sanitizers CMake config" OFF
                        "NOT CMAKE_VERSION VERSION_LESS 3.11" OFF)
 
@@ -96,13 +97,11 @@ cmake_dependent_option(
 cmake_dependent_option(
   CLI11_CLANG_TIDY "Look for and use Clang-Tidy" OFF
   "CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME;NOT CMAKE_VERSION VERSION_LESS 3.6" OFF)
+  
+  set(CLI11_CLANG_TIDY_OPTIONS
+      ""
+      CACHE STRING "Clang tidy options, such as -fix, semicolon separated")
 
-set(CLI11_FULL_TOML_PARSER
-    OFF
-    CACHE BOOL "Installs full c++11 TOML parser")
-set(CLI11_CLANG_TIDY_OPTIONS
-    ""
-    CACHE STRING "Clang tidy options, such as -fix, semicolon separated")
 
 if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND NOT DEFINED CMAKE_CXX_STANDARD)
   set(CMAKE_CXX_STANDARD 11)

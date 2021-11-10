@@ -984,7 +984,7 @@ TEST_CASE_METHOD(TApp, "TOMLVectordirect", "[config]") {
 
     app.set_config("--config", tmpini);
 
-    app.config_formatter(std::make_shared<CLI::ConfigTOML>());
+    app.config_formatter(std::make_shared<CLI::ConfigTOML<>>());
 
     {
         std::ofstream out{tmpini};
@@ -2094,7 +2094,7 @@ TEST_CASE_METHOD(TApp, "TomlOutputVector", "[config]") {
 
     std::vector<int> v;
     app.add_option("--vector", v);
-    app.config_formatter(std::make_shared<CLI::ConfigTOML>());
+    app.config_formatter(std::make_shared<CLI::ConfigTOML<>>());
     args = {"--vector", "1", "2", "3"};
 
     run();
